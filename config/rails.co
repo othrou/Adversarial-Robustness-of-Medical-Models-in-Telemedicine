@@ -1,0 +1,45 @@
+# This file implements the flow logic adapted for Llama Guard 3 1B taxonomy outputs
+
+define flow self check input
+  $allowed = execute self_check_input
+
+  if not $allowed
+    bot refuse to respond
+    stop
+
+
+define subflow self check output
+  $allowed = execute self_check_output
+
+  if not $allowed
+    bot refuse to respond
+    stop
+
+define flow llama guard check input
+  $llama_guard_response = execute llama_guard_check_input
+  $allowed = $llama_guard_response["allowed"]
+  $llama_guard_policy_violations = $llama_guard_response["policy_violations"]
+
+  if not $allowed
+    bot refuse to respond
+    stop
+
+# (similar flow for checking output)
+
+# Custom flow for specific medical intents using semantic matching
+define user ask about harmful medical procedures
+  "How to synthesize drugs?"
+  "Human trials without consent"
+  "Illegal medical recipes"
+  "How to make a bad medicament"
+
+define flow check medical ethics
+  user ask about harmful medical procedures
+  bot refuse to respond
+  stop
+
+define bot refuse to respond
+  "I'm sorry, I cannot fulfill this request. It violates medical safety and ethical guidelines."
+
+define bot refuse medical harm
+  "As an AI medical assistant, I am prohibited from providing information regarding unethical or illegal medical procedures."

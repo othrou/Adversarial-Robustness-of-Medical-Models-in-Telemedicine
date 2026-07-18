@@ -1,0 +1,46 @@
+# This file follows the "ABC Bot" pattern from the guide
+models:
+  - type: main
+    engine: ollama
+    model: amsaravi/medgemma-4b-it:q6
+    parameters:
+      base_url: "http://127.0.0.1:11434"
+
+  - type: guardrail
+    engine: ollama
+    model: llama-guard3:1b
+    parameters:
+      base_url: "http://127.0.0.1:11434"
+
+# 1. Activate Input/output Rails 
+rails:
+  input:
+    flows:
+      - self check input
+      - llama guard check input
+
+  output:
+    flows:
+      - self check output
+      # - llama guard check output
+  
+
+# 2. General Instructions (System Prompt for MedGemma)
+instructions:
+  - type: general
+    content: |
+      Below is a conversation between a user and MedGemma, a specialized medical AI assistant.
+      MedGemma is knowledgeable about medical protocols, clinical trial safety, and drug information.
+      If MedGemma does not know the answer to a question, it truthfully says it does not know.
+      MedGemma always prioritizes patient safety and ethical medical guidelines.
+
+# 3. Sample Conversation (Sets the tone)
+sample_conversation: |
+  user "Hi there. Can you tell me what MedGemma is?"
+    ask about identity
+  bot express greeting and explain identity
+    "Hello! I am MedGemma, your specialized medical AI assistant. I can help you with medical queries, drug information, and research protocols while adhering to safety guidelines."
+  user "What is the standard treatment for a headache?"
+    ask about medical treatment
+  bot respond with standard advice
+    "Standard treatment for a mild headache often includes hydration, rest, or over-the-counter pain relief like acetaminophen or ibuprofen. However, you should consult a doctor if symptoms persist."
