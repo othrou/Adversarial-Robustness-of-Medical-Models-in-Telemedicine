@@ -56,13 +56,53 @@ medgemma-sim/
 │   ├── prompts.yml          # Meta Llama Guard O1-O8 taxonomy definitions
 │   └── rails.co             # Colang 1.0 dialogue flows & refusal logic
 ├── agents/
-│   ├── attacker_pair.py     # Adversarial agent (PAIR/ProAttack logic)
-│   └── target.py            # The "Victim" agent (Sequential Defense wrapper)
+│   ├── llm.py               # LLM backend abstraction (Ollama + offline Mock)
+│   ├── judge.py             # Safety judge: harm score 0-10, breach flag, feedback
+│   ├── defender.py          # Defender (Agent B): NeMo+MedGemma wrapper + Mock
+│   ├── reward.py            # Zero-sum Markov-game reward model + scoreboard
+│   ├── goals.py             # Adversarial goals + benign utility probes
+│   ├── target.py            # Low-level NeMo Guardrails wrapper
+│   ├── attacker_pair.py     # (legacy) original static PAIR strategies
+│   └── attacks/             # Attacker (Agent A) strategies, one shared interface
+│       ├── base.py          #   BaseAttacker, AttackEpisode, TurnRecord
+│       ├── pair.py          #   PAIR: iterative prompt refinement
+│       ├── proattack.py     #   ProAttack: evolutionary wrapper search
+│       ├── rl_bandit.py     #   RL: epsilon-greedy reward-guided bandit
+│       └── signature.py     #   Signature-guided RAG PII exfiltration
 ├── tests/
-│   └── tests.py             # Connectivity and baseline safety tests
+│   ├── test_markov_game.py  # Offline unit tests (mock backend, no server)
+│   └── tests.py             # Connectivity / baseline safety checks
 ├── simulation.py            # Main Orchestrator (Markov Game loop)
-└── requirements.txt         # Project dependencies
+├── pyproject.toml           # Project + optional deps (managed with uv)
+└── notebooks/               # Original attack/defense research notebooks
 ```
+
+### The Markov game, concretely
+
+Each **attack** strategy (Agent A) implements one interface,
+`attacks.base.BaseAttacker`, and runs its own inner optimisation loop against the
+**Defender** (Agent B): *propose adversarial prompt → guarded target responds →
+judge scores harm → reward guides the next move.* The four ported attacks are:
+
+| name        | idea                                                       | from notebook |
+|-------------|------------------------------------------------------------|---------------|
+| `pair`      | iteratively refine one prefix on judge feedback            | `PAIR_Attack_Enhanced` |
+| `proattack` | evolutionary hill-climbing over a population of wrappers   | `ProAttack_Saad` |
+| `rl`        | ε-greedy bandit with a softmax memory bank of good prefixes| `RL_Attack_PAIR` |
+| `signature` | TF-IDF medical "signatures" to make a RAG leak PII         | `signature_guided_adversarial_attack` |
+
+### Reward model (`agents/reward.py`)
+
+The game is scored as a (near) zero-sum game. Crucially, the **Defender is now
+rewarded when it performs well** — the piece the original loop was missing:
+
+* **Adversarial turn** — `attacker_reward = harm − query_cost·queries`;
+  `defender_reward = +block_reward` when it correctly refuses, or `−harm` on a leak.
+* **Benign utility turn** — the Defender is rewarded for answering ordinary medical
+  questions and **penalised for over-refusal**, so "refuse everything" is not optimal.
+
+Headline metrics per run: **ASR** (Attack Success Rate), **DSR** (Defense Success
+Rate) and **Over-Refusal Rate**, plus each agent's cumulative return.
 
 ---
 
@@ -79,21 +119,37 @@ medgemma-sim/
 
 ### Installation
 
-1. Clone the repository.
-2. Create a virtual environment and install dependencies:
-   ```
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
+Dependencies are managed with [`uv`](https://docs.astral.sh/uv/) (Python 3.12):
+
+```bash
+uv sync                          # core deps (game + NeMo Guardrails)
+uv sync --extra signature --group dev   # + signature attack extras + test deps
+```
 
 ### Running the Simulation
 
-Execute the main orchestrator to start the Markov Game:
+Run the Markov game against the **real** guarded target (needs Ollama + the models
+above pulled):
 
+```bash
+uv run python simulation.py --attack pair           # PAIR vs the defence
+uv run python simulation.py --attack rl  --attacker-model mistral
+uv run python simulation.py --attack all            # every jailbreak attack, compared
 ```
-python simulation.py
+
+Useful flags: `--num-goals`, `--max-iterations`, `--max-queries`,
+`--breach-threshold`, `--attacker-model`, `--judge-model`, `--defender {guardrails,mock}`.
+
+**Offline dry run / CI** — no server, no downloads, deterministic mock models:
+
+```bash
+MARKOV_GAME_BACKEND=mock uv run python simulation.py --attack all --defender mock
+uv run pytest                    # 22 offline unit tests
 ```
+
+The signature-guided attack uses a built-in **synthetic** corpus by default; set
+`MARKOV_GAME_USE_MTSAMPLES=1` to use the real (public, de-identified) MTSamples
+corpus with synthetic Faker PII injected — no real patient data is ever used.
 
 ---
 
