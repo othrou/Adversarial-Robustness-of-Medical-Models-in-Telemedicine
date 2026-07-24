@@ -171,13 +171,15 @@ class _TfidfVault:
 class SignatureGuidedAttacker(BaseAttacker):
     name = "signature"
 
-    def __init__(self, num_patients: int = 40, signature_k: int = 3,
+    def __init__(self, num_patients: int = 40, signature_k: int = 2,
                  templates: Optional[List[int]] = None, guard_strength: float = 0.6,
                  seed: int = 42, **kwargs):
         super().__init__(**kwargs)
         self.num_patients = num_patients
+        # Notebook defaults: signature length k=2, templates [1, 2, 3]
+        # (signature_guided_adversarial_attack.ipynb).
         self.signature_k = signature_k
-        self.templates = templates or [1, 2, 3, 4, 5]
+        self.templates = templates or [1, 2, 3]
         # Only used by the simulated generator: probability the guard refuses a
         # PII request. Lower => easier leaks. Ignored when a real LLM backend
         # generates answers.

@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
-
+.venv311/
 # Virtual env / uv
 .venv/
 

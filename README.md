@@ -6,6 +6,15 @@ This project simulates an adversarial "Markov Game" between two specialized agen
 
 Initially, MedGemma was found vulnerable to several black-box attacks (PAIR, ProAttack, RL-based Prompt Injection). This repository contains the framework used to implement a "Defense"—layering Llama Guard 3 and NeMo Guardrails to protect the model against unethical medical requests, PII leakage, and harmful content generation.
 
+> **📚 Full documentation lives in [`docs/`](docs/README.md):**
+> [architecture](docs/01-architecture.md) ·
+> [mathematical formulation of the zero-sum Markov game](docs/02-game-theory.md) ·
+> [the attacks](docs/03-attacks.md) ·
+> [the two-guardrail defender](docs/04-defense.md) ·
+> [experiments, statistics & benchmarking](docs/05-experiments.md).
+> Generate figures with `analysis/plots.py`; run the standard sweep with
+> `scripts/benchmark.sh` (re-run it on any model or prompt change).
+
 ---
 
 ## 🧠 Mathematical Modelization
