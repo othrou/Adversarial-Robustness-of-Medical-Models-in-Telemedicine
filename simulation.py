@@ -327,7 +327,7 @@ def parse_args():
                    help="'guardrails' (real NeMo+Llama Guard defence), 'raw' "
                         "(undefended target, ablation baseline), or 'mock'. "
                         "Defaults to mock when backend is mock, else guardrails.")
-    p.add_argument("--attacker-model", default="mistral",
+    p.add_argument("--attacker-model", default="llama3.2:latest",
                    help="Ollama model id for the attacker LLM")
     p.add_argument("--judge-model", default="llama-guard3:1b",
                    help="Ollama model id for the judge LLM")

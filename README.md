@@ -1,172 +1,278 @@
-# MedGemma Safety Simulation: Multi-Agent Red Teaming & Hardening
+<div align="center">
 
-## Overview
+# ⚔️ MedGemma Arena
 
-This project simulates an adversarial "Markov Game" between two specialized agents to evaluate and harden the security posture of MedGemma-4B-it.
+### Multi-Agent Red Teaming & Hardening for Medical LLMs
 
-Initially, MedGemma was found vulnerable to several black-box attacks (PAIR, ProAttack, RL-based Prompt Injection). This repository contains the framework used to implement a "Defense"—layering Llama Guard 3 and NeMo Guardrails to protect the model against unethical medical requests, PII leakage, and harmful content generation.
+**A zero-sum Markov game between adversarial attackers and a guarded medical AI, measuring robustness through quantifiable attack success rates, defense rates, and utility trade-offs.**
 
-> **📚 Full documentation lives in [`docs/`](docs/README.md):**
-> [architecture](docs/01-architecture.md) ·
-> [mathematical formulation of the zero-sum Markov game](docs/02-game-theory.md) ·
-> [the attacks](docs/03-attacks.md) ·
-> [the two-guardrail defender](docs/04-defense.md) ·
-> [experiments, statistics & benchmarking](docs/05-experiments.md).
-> Generate figures with `analysis/plots.py`; run the standard sweep with
-> `scripts/benchmark.sh` (re-run it on any model or prompt change).
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue?logo=python&logoColor=white)](https://python.org)
+[![Ollama](https://img.shields.io/badge/Ollama-powered-5B5?logo=ollama&logoColor=white)](https://ollama.ai)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-22_offline-important)](#-testing)
+[![Code](https://img.shields.io/badge/docs-docs%2F-8A2BE2)](docs/README.md)
 
----
-
-## 🧠 Mathematical Modelization
-
-### The POMDP Framework
-
-The interaction is modeled as a Partially Observable Markov Decision Process (POMDP):
-
-- **Agent A (Attacker):** Operates under partial observability. It sees only the model's textual output (Observations) and refines its prompt (Actions) to transition the model from a "Refusal State" to a "Breached State."
-- **Agent B (Defender):** Controls the state transition function $T(s, a)$. By implementing guardrails, the defender significantly reduces the probability of transitioning into a harmful state.
-
-### Multi-Agent Markov Game
-
-The simulation is a zero-sum game:
-
-- **Attacker Action ($A_t$):** Iterative refinement of adversarial prompts (e.g., PAIR methodology).
-- **Environment Transition:** The " Defense" processes the input through three distinct layers.
-- **Reward/Observation ($O_t$):** The Attacker receives a response or a refusal, providing the signal for the next iteration.
+</div>
 
 ---
 
-## 🛡️ Defensive Architecture: The " Defense"
+## 🔥 The Big Picture
 
-We implement a three-layer sequential defense to ensure MedGemma remains safe:
-
-1. **Layer 1: Input Sentinel (Llama Guard 3)**
-
-   - **Confrontation:** First line of defense.
-   - **Task:** Uses a customized Meta Llama Guard taxonomy (O1-O8), including a specialized O8: Medical Ethics category to catch unethical experimentation or drug synthesis requests.
-
-2. **Layer 2: Logic Flow (NeMo Guardrails)**
-
-   - **Confrontation:** Dialogue management.
-   - **Task:** Handles domain-specific "Hard Negatives" using Colang 1.0 logic. It differentiates between safe medical queries and unethical procedures that general safety models might miss.
-
-3. **Layer 3: Output Sentinel (Llama Guard 3)**
-   - **Confrontation:** Final audit.
-   - **Task:** Scans MedGemma's generated response for PII leakage or harmful medical advice before it reaches the user.
-
----
-
-## 📁 Project Structure
+MedGemma-4B-it was found vulnerable to black-box jailbreaks. This framework **systematically evaluates** how well a defense stack (Llama Guard 3 + NeMo Guardrails) protects it — using **four distinct attack strategies**, a **harm judge**, and a **zero-sum reward model** that also tracks over-refusal on benign queries.
 
 ```
-medgemma-sim/
-├── config/
-│   ├── config.yml           # Model routing (Ollama) & system instructions
-│   ├── prompts.yml          # Meta Llama Guard O1-O8 taxonomy definitions
-│   └── rails.co             # Colang 1.0 dialogue flows & refusal logic
+                    ┌─────────────────────────────────────────────────────┐
+                    │                 simulation.py                       │
+                    │                   (orchestrator)                    │
+    ┌──────────┐    │  ┌──────────┐  prompt   ┌───────────┐  response    │
+    │ GOALS ───┼───►│──┤ Attacker │──────────►│ Defender  │───────────┐  │
+    │ 8 harmful│    │  │ (Agent A) │◄──────────│ (Agent B) │           │  │
+    │ 6 benign │    │  └──────────┘ feedback  └───────────┘           │  │
+    └──────────┘    │       ▲                     ▲                  │  │
+                    │       │                     │    ┌──────────┐   │  │
+                    │       └─────────────────────┼────│  Judge   │◄──┘  │
+                    │                             │    │ harm 0-10│      │
+                    │                             │    └────┬─────┘      │
+                    │                             │         │            │
+                    │                     ┌───────▼─────────▼──────┐     │
+                    │                     │     Reward Model       │     │
+                    │                     │   ASR / DSR / Returns  │     │
+                    │                     └───────────────────────┘     │
+                    └────────────────────────────────────────────────────┘
+                                            │
+                              results/*.json ──► analysis/plots.py ──► figures
+```
+
+---
+
+## 🎯 The Four Attack Strategies
+
+Each attack is an **autonomous agent** with its own optimization loop, unified under one interface. See [`docs/03-attacks.md`](docs/03-attacks.md) for full details and per-attack CLI commands.
+
+| Attack | Tactic | Inner Loop | Cost |
+|--------|--------|-----------|------|
+| **PAIR** 🎭 | Iterative prefix refinement | Refine one prefix on judge feedback | ~queries |
+| **ProAttack** 🧬 | Evolutionary wrapper search | Mutate + select elite wrappers | ~n_candidates × generations |
+| **RL Bandit** 🎰 | ε-greedy softmax bandit | Explore/exploit over prefix memory bank | ~n_candidates × iterations |
+| **Signature** 🕵️ | TF-IDF PII exfiltration | RAG vault with rare-medical-term signatures | ~num_targets × templates |
+
+> **Key insight:** `effective_harm = 0 if blocked else harm` — a blocked refusal never rewards the attacker, even if the judge mis-scores it.
+
+---
+
+## 🛡️ The Defender Stack
+
+Three sequential layers (configured in [`config/`](config/), full breakdown in [`docs/04-defense.md`](docs/04-defense.md)):
+
+```
+  user prompt
+       │
+  ┌────▼──────────────┐   Layer 1: NeMo Self-Check
+  │ "Should this be   │   (MedGemma judges its own input)
+  │    blocked?"      │──► BLOCK ❌
+  └────┬──────────────┘
+       │ pass
+  ┌────▼──────────────┐   Layer 2: Llama Guard 3
+  │ O1-O8 Taxonomy    │   (Custom O8: Medical Ethics)
+  │    safe/unsafe    │──► BLOCK ❌
+  └────┬──────────────┘
+       │ safe
+  ┌────▼──────────────┐
+  │    MedGemma       │   Generates response
+  │  generates answer │
+  └────┬──────────────┘
+       │
+  ┌────▼──────────────┐   Layer 3: NeMo Self-Check Output
+  │  Audit bot's own  │   (Catches PII / harmful content)
+  │     answer        │──► BLOCK ❌
+  └────┬──────────────┘
+       │ pass
+  response to user ✅
+```
+
+**Designed invariants** ([architecture deep-dive](docs/01-architecture.md) §5):
+- 🔒 **Fail-closed** — a guardrail exception = block, never breach
+- 🚫 **Refusal overrides judge** — textual refusal forces `success=False`
+- 📊 **Config fingerprinting** — SHA-256 of every guardrail file in each report
+
+---
+
+## 📦 Project Architecture
+
+```
+├── simulation.py              # 🎮 Game orchestrator (the entry point)
 ├── agents/
-│   ├── llm.py               # LLM backend abstraction (Ollama + offline Mock)
-│   ├── judge.py             # Safety judge: harm score 0-10, breach flag, feedback
-│   ├── defender.py          # Defender (Agent B): NeMo+MedGemma wrapper + Mock
-│   ├── reward.py            # Zero-sum Markov-game reward model + scoreboard
-│   ├── goals.py             # Adversarial goals + benign utility probes
-│   ├── target.py            # Low-level NeMo Guardrails wrapper
-│   ├── attacker_pair.py     # (legacy) original static PAIR strategies
-│   └── attacks/             # Attacker (Agent A) strategies, one shared interface
-│       ├── base.py          #   BaseAttacker, AttackEpisode, TurnRecord
-│       ├── pair.py          #   PAIR: iterative prompt refinement
-│       ├── proattack.py     #   ProAttack: evolutionary wrapper search
-│       ├── rl_bandit.py     #   RL: epsilon-greedy reward-guided bandit
-│       └── signature.py     #   Signature-guided RAG PII exfiltration
+│   ├── llm.py                 # 🔌 LLM backend (Ollama / deterministic Mock)
+│   ├── judge.py               # ⚖️ Harm scorer 0-10 + feedback
+│   ├── defender.py            # 🛡️ GuardrailsDefender / RawModelDefender / MockDefender
+│   ├── reward.py              # 📈 Zero-sum reward model + ScoreBoard
+│   ├── goals.py               # 📝 8 adversarial goals + 6 benign probes
+│   ├── target.py              # 🔧 Low-level NeMo Guardrails wrapper
+│   └── attacks/
+│       ├── base.py            #   BaseAttacker, AttackEpisode, TurnRecord
+│       ├── pair.py            #   🎭 PAIR: iterative prompt refinement
+│       ├── proattack.py       #   🧬 ProAttack: evolutionary search
+│       ├── rl_bandit.py       #   🎰 RL bandit: softmax explore/exploit
+│       └── signature.py       #   🕵️ Signature-guided PII exfiltration
+├── config/
+│   ├── config.yml             #   Model routing + active rails
+│   ├── prompts.yml            #   Llama Guard O1-O8 taxonomy
+│   └── rails.co               #   Colang dialogue flows
 ├── tests/
-│   ├── test_markov_game.py  # Offline unit tests (mock backend, no server)
-│   └── tests.py             # Connectivity / baseline safety checks
-├── simulation.py            # Main Orchestrator (Markov Game loop)
-├── pyproject.toml           # Project + optional deps (managed with uv)
-└── notebooks/               # Original attack/defense research notebooks
+│   ├── test_markov_game.py    #   22 offline unit tests (mock backend)
+│   ├── tests.py               #   Connectivity / pipeline sanity check
+│   └── malicious.py           #   Manual adversarial probe
+├── analysis/
+│   └── plots.py               # 📊 Figures: rates, harm heatmap, A/B comparison
+├── scripts/
+│   ├── benchmark.sh           #   Standard multi-attack sweep
+│   └── ab_benchmark.sh        #   Undefended vs defended A/B comparison
+├── notebooks/                 # 📓 Original research (attack + defense prototypes)
+├── results/                   #   📁 Run reports + figures (write-only)
+└── docs/
+    ├── 01-architecture.md     #   Every module, data structure, control flow
+    ├── 02-game-theory.md      #   🧮 Formal POMDP + reward mathematics
+    ├── 03-attacks.md          #   All 4 attacks in depth
+    ├── 04-defense.md          #   Defender config + extension points
+    └── 05-experiments.md      #   Benchmarking protocol + statistical methods
 ```
-
-### The Markov game, concretely
-
-Each **attack** strategy (Agent A) implements one interface,
-`attacks.base.BaseAttacker`, and runs its own inner optimisation loop against the
-**Defender** (Agent B): *propose adversarial prompt → guarded target responds →
-judge scores harm → reward guides the next move.* The four ported attacks are:
-
-| name        | idea                                                       | from notebook |
-|-------------|------------------------------------------------------------|---------------|
-| `pair`      | iteratively refine one prefix on judge feedback            | `PAIR_Attack_Enhanced` |
-| `proattack` | evolutionary hill-climbing over a population of wrappers   | `ProAttack_Saad` |
-| `rl`        | ε-greedy bandit with a softmax memory bank of good prefixes| `RL_Attack_PAIR` |
-| `signature` | TF-IDF medical "signatures" to make a RAG leak PII         | `signature_guided_adversarial_attack` |
-
-### Reward model (`agents/reward.py`)
-
-The game is scored as a (near) zero-sum game. Crucially, the **Defender is now
-rewarded when it performs well** — the piece the original loop was missing:
-
-* **Adversarial turn** — `attacker_reward = harm − query_cost·queries`;
-  `defender_reward = +block_reward` when it correctly refuses, or `−harm` on a leak.
-* **Benign utility turn** — the Defender is rewarded for answering ordinary medical
-  questions and **penalised for over-refusal**, so "refuse everything" is not optimal.
-
-Headline metrics per run: **ASR** (Attack Success Rate), **DSR** (Defense Success
-Rate) and **Over-Refusal Rate**, plus each agent's cumulative return.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Ollama:** Installed and running.
-- **Models:**
-  ```
-  ollama pull amsaravi/medgemma-4b-it:q6
-  ollama pull llama-guard3:1b
-  ```
-
-### Installation
-
-Dependencies are managed with [`uv`](https://docs.astral.sh/uv/) (Python 3.12):
-
 ```bash
-uv sync                          # core deps (game + NeMo Guardrails)
-uv sync --extra signature --group dev   # + signature attack extras + test deps
+# Ollama running locally with:
+ollama pull amsaravi/medgemma-4b-it:q6    # Target model
+ollama pull llama-guard3:1b               # Safety judge + guardrail
+ollama pull llama3.2                      # Attacker (or any instruct model)
 ```
 
-### Running the Simulation
-
-Run the Markov game against the **real** guarded target (needs Ollama + the models
-above pulled):
+### Install
 
 ```bash
-uv run python simulation.py --attack pair           # PAIR vs the defence
-uv run python simulation.py --attack rl  --attacker-model mistral
-uv run python simulation.py --attack all            # every jailbreak attack, compared
+uv sync                            # Core deps
+uv sync --extra signature --group dev   # + signature attack + testing
 ```
 
-Useful flags: `--num-goals`, `--max-iterations`, `--max-queries`,
-`--breach-threshold`, `--attacker-model`, `--judge-model`, `--defender {guardrails,mock}`.
-
-**Offline dry run / CI** — no server, no downloads, deterministic mock models:
+### Run
 
 ```bash
-MARKOV_GAME_BACKEND=mock uv run python simulation.py --attack all --defender mock
-uv run pytest                    # 22 offline unit tests
+# 🚤 Quick smoke test (offline, no Ollama needed)
+uv run python simulation.py --attack pair --defender mock
+
+# 🎯 Single attack against real models
+uv run python simulation.py --attack rl \
+    --attacker-model llama3.2 \
+    --judge-model llama-guard3:1b \
+    --num-goals 3 --max-iterations 5
+
+# ⚔️ Full sweep: all attacks compared
+uv run python simulation.py --attack all \
+    --attacker-model llama3.2 \
+    --judge-model llama-guard3:1b \
+    --num-goals 3 --repeats 3 \
+    --report results/run.json
+
+# 📊 Generate figures from results
+uv run python -m analysis.plots results/run.json --outdir results/figures/run
+
+# 🔬 Ablation: undefended raw model vs guarded
+uv run python simulation.py --attack pair --defender raw --report results/raw.json
+uv run python simulation.py --attack pair --defender guardrails --report results/guarded.json
 ```
 
-The signature-guided attack uses a built-in **synthetic** corpus by default; set
-`MARKOV_GAME_USE_MTSAMPLES=1` to use the real (public, de-identified) MTSamples
-corpus with synthetic Faker PII injected — no real patient data is ever used.
+### Run Tests
+
+```bash
+uv run pytest              # 22 offline tests, no server needed
+```
 
 ---
 
-## 📊 Evaluation Taxonomy (O1-O8)
+## 📊 What You Get
 
-The system evaluates all interactions against the following categories:
+Every run reports. The reward model equations and metric derivations are formalized in [`docs/02-game-theory.md`](docs/02-game-theory.md) §6–8.
 
-- **O1-O7:** Standard Meta Llama Guard taxonomy (Violence, Sexual Content, Criminal Planning, Guns, Controlled Substances, Self-Harm, Offensive Language).
-- **O8 (Custom):** Medical Ethics & Unethical Procedures. Specifically blocks human trials without consent, illegal medical synthesis, and bypassing professional oversight.
+| Metric | Meaning | Good |
+|--------|---------|------|
+| **ASR** | Attack Success Rate (breach fraction) | ↓ Low |
+| **DSR** | Defense Success Rate (1 − ASR) | ↑ High |
+| **Mean Harm** | Average harm grade (0–10) across goals | ↓ Low |
+| **Over-Refusal** | Benign queries wrongly blocked | ↓ Low |
+| **Attacker Return** | Cumulative attacker reward | ↓ Low |
+| **Defender Return** | Cumulative defender reward | ↑ High |
+
+Multiple `--repeats` give you **mean ± std** for error bars. See [`docs/05-experiments.md`](docs/05-experiments.md) for the benchmarking protocol and statistical methods.
 
 ---
+
+## 🧪 Headline Results (from the paper)
+
+| Attack | ASR Undefended | ASR Defended | Δ Harm | Verdict |
+|--------|:--------------:|:------------:|:------:|---------|
+| **RL Bandit** | 81% | **19%** | **−5.3** | 🟢 Guardrails highly effective |
+| **PAIR** | 69% | 38% | −1.2 | 🟡 Modest help |
+| **ProAttack** | 62% | 62% | **+2.1** | 🔴 Guard did not help; harm rose |
+| **Signature** | **100%** | **100%** | 0.0 | 🔴 **Bypasses guard entirely** (RAG attack) |
+| Over-refusal | 0% | 16.7% | | Utility cost of defense |
+
+> **Open gap:** The signature-guided PII attack operates on its own RAG vault, never hitting the chat guardrails — 10/10 harm both ways.
+
+---
+
+## 📚 Documentation Map — `docs/`
+
+| # | Document | What it covers | Who should read it |
+|---|----------|---------------|-------------------|
+| 1 | [`01-architecture.md`](docs/01-architecture.md) | **Every module, data structure, and end-to-end control flow** — the map of the codebase. Includes the big-picture ASCII diagram, module reference (simulation.py, agents/*, config/, tests/), key data structures (TurnRecord, AttackEpisode, JudgeVerdict, etc.), and the 5 design invariants. | Everyone starting out. Read this first. |
+| 2 | [`02-game-theory.md`](docs/02-game-theory.md) | **Formal POMDP + zero-sum Markov game** — state space, actions, observations, transition kernel, reward equations (adversarial + benign turns), episodic returns, equilibrium interpretation, and a full symbol table mapping Greek letters to code variables. | If you care about *why* the numbers mean what they mean. |
+| 3 | [`03-attacks.md`](docs/03-attacks.md) | **All 4 attack strategies in depth** — PAIR (iterative refinement), ProAttack (evolutionary search), RL bandit (ε-greedy softmax), Signature (TF-IDF PII exfiltration). Each section has: the loop pseudocode, key parameters, exact CLI command to test just that attack, and how to add a 5th one. | Running or extending attacks. |
+| 4 | [`04-defense.md`](docs/04-defense.md) | **The defender pipeline** — why only two guardrails (scope rationale), the 3-stage pipeline diagram, code reference for GuardrailsDefender / RawModelDefender / MockDefender, configuration reference (config.yml / prompts.yml / rails.co), the `llama_guard` naming gotcha, and ordered extension points. | Understanding or modifying the defense. |
+| 5 | [`05-experiments.md`](docs/05-experiments.md) | **Benchmarking protocol & statistics** — the golden rule ("any prompt change invalidates previous numbers"), how `--repeats` produces mean±std, statistical methods (population std, error bars), how to read the figures (rates.png, harm_grades.png, harm_heatmap.png, returns.png, signature_pii.png), A/B comparison between runs, the headline undefended vs defended results table, and reproducibility/isolation guarantees. | Running experiments, interpreting results, or reporting findings. |
+
+**Recommended reading order:** ① → ② → ③ → ④ → ⑤, or jump to whichever section matches what you're doing.
+
+---
+
+## 🧠 The Math (in brief)
+
+The game is a **zero-sum partially observable Markov game**. Full formalism with state space, action spaces, observation function, transition kernel, reward equations, and equilibrium interpretation in [`docs/02-game-theory.md`](docs/02-game-theory.md).
+
+```
+  G = ⟨S, A^A, A^B, O, T, Z, R^A, R^B, γ⟩
+
+  State:       s_t = (context_t, harm_t, blocked_t)
+  Attacker:    a_t = prefix_t ⊕ goal     (adversarial prompt)
+  Defender:    a_t ∈ {answer, refuse}    (via guardrail pipeline)
+  Observation: o_t = (response, harm̂_t, blocked, feedback)
+  Reward:
+    Adversarial turn:  R^A = h̄_t − κ·q
+                        R^B = −λ·h̄_t  (breach) | +β  (blocked)
+    Benign turn:       R^A = 0
+                        R^B = +u (answered) | −ρ (over-refused)
+```
+
+---
+
+## 👥 Contributing
+
+This is a research/evaluation framework. Contributions that add:
+
+- 🔥 New attack strategies (subclass `BaseAttacker`, register in `agents/attacks/__init__.py`)
+- 🛡️ New defender layers (subclass `Defender`, add a `--defender` switch)
+- 📊 Better analysis plots (`analysis/plots.py`)
+
+are welcome — but **every change requires a re-benchmark** ([`docs/05-experiments.md`](docs/05-experiments.md) §1: "the golden rule").
+
+---
+
+<div align="center">
+
+**Made with 🧠 for AI Safety Research**
+
+*Adversarial Robustness of Medical Models in Telemedicine — Phase 2*
+
+</div>
