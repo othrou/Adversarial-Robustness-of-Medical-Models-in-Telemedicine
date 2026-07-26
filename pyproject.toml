@@ -9,3 +9,24 @@ dependencies = [
     "nemoguardrails>=0.19.0",
     "ollama>=0.6.1",
 ]
+
+[project.optional-dependencies]
+# Extras for the signature-guided PII-exfiltration attack. The core mechanism
+# (TF-IDF signatures, templates, leak detection, lightweight vault) needs only
+# numpy + scikit-learn; faker/datasets enable the full MTSamples+PII pipeline.
+signature = [
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "faker>=25.0",
+    "datasets>=2.19",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

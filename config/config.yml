@@ -6,7 +6,12 @@ models:
     parameters:
       base_url: "http://127.0.0.1:11434"
 
-  - type: guardrail
+  # NeMo injects this into the llama_guard actions as `llama_guard_llm`, keyed on
+  # the model `type` (see nemoguardrails llmrails.py: model_name = f"{type}_llm").
+  # It must therefore be `llama_guard`; with `guardrail` the `llama guard check
+  # input` flow resolves the LLM to None and raises "No LLM provided to llm_call()"
+  # for any input that passes the first (self check) layer.
+  - type: llama_guard
     engine: ollama
     model: llama-guard3:1b
     parameters:
