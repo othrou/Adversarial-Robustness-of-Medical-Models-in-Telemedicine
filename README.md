@@ -16,6 +16,20 @@
 
 ---
 
+## 📚 Documentation Map — `docs/`
+
+| #   | Document                                        | What it covers                                                                                                                                                                                                                                                                                                                                                                                                                      | Who should read it                                                |
+| --- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 1   | [`01-architecture.md`](docs/01-architecture.md) | **Every module, data structure, and end-to-end control flow** — the map of the codebase. Includes the big-picture ASCII diagram, module reference (simulation.py, agents/\*, config/, tests/), key data structures (TurnRecord, AttackEpisode, JudgeVerdict, etc.), and the 5 design invariants.                                                                                                                                    | Everyone starting out. Read this first.                           |
+| 2   | [`02-game-theory.md`](docs/02-game-theory.md)   | **Formal POMDP + zero-sum Markov game** — state space, actions, observations, transition kernel, reward equations (adversarial + benign turns), episodic returns, equilibrium interpretation, and a full symbol table mapping Greek letters to code variables.                                                                                                                                                                      | If you care about _why_ the numbers mean what they mean.          |
+| 3   | [`03-attacks.md`](docs/03-attacks.md)           | **All 4 attack strategies in depth** — PAIR (iterative refinement), ProAttack (evolutionary search), RL bandit (ε-greedy softmax), Signature (TF-IDF PII exfiltration). Each section has: the loop pseudocode, key parameters, exact CLI command to test just that attack, and how to add a 5th one.                                                                                                                                | Running or extending attacks.                                     |
+| 4   | [`04-defense.md`](docs/04-defense.md)           | **The defender pipeline** — why only two guardrails (scope rationale), the 3-stage pipeline diagram, code reference for GuardrailsDefender / RawModelDefender / MockDefender, configuration reference (config.yml / prompts.yml / rails.co), the `llama_guard` naming gotcha, and ordered extension points.                                                                                                                         | Understanding or modifying the defense.                           |
+| 5   | [`05-experiments.md`](docs/05-experiments.md)   | **Benchmarking protocol & statistics** — the golden rule ("any prompt change invalidates previous numbers"), how `--repeats` produces mean±std, statistical methods (population std, error bars), how to read the figures (rates.png, harm_grades.png, harm_heatmap.png, returns.png, signature_pii.png), A/B comparison between runs, the headline undefended vs defended results table, and reproducibility/isolation guarantees. | Running experiments, interpreting results, or reporting findings. |
+
+**Recommended reading order:** ① → ② → ③ → ④ → ⑤, or jump to whichever section matches what you're doing.
+
+---
+
 ## 🔥 The Big Picture
 
 MedGemma-4B-it was found vulnerable to black-box jailbreaks. This framework **systematically evaluates** how well a defense stack (Llama Guard 3 + NeMo Guardrails) protects it — using **four distinct attack strategies**, a **harm judge**, and a **zero-sum reward model** that also tracks over-refusal on benign queries.
@@ -49,12 +63,12 @@ MedGemma-4B-it was found vulnerable to black-box jailbreaks. This framework **sy
 
 Each attack is an **autonomous agent** with its own optimization loop, unified under one interface. See [`docs/03-attacks.md`](docs/03-attacks.md) for full details and per-attack CLI commands.
 
-| Attack | Tactic | Inner Loop | Cost |
-|--------|--------|-----------|------|
-| **PAIR** 🎭 | Iterative prefix refinement | Refine one prefix on judge feedback | ~queries |
-| **ProAttack** 🧬 | Evolutionary wrapper search | Mutate + select elite wrappers | ~n_candidates × generations |
-| **RL Bandit** 🎰 | ε-greedy softmax bandit | Explore/exploit over prefix memory bank | ~n_candidates × iterations |
-| **Signature** 🕵️ | TF-IDF PII exfiltration | RAG vault with rare-medical-term signatures | ~num_targets × templates |
+| Attack           | Tactic                      | Inner Loop                                  | Cost                        |
+| ---------------- | --------------------------- | ------------------------------------------- | --------------------------- |
+| **PAIR** 🎭      | Iterative prefix refinement | Refine one prefix on judge feedback         | ~queries                    |
+| **ProAttack** 🧬 | Evolutionary wrapper search | Mutate + select elite wrappers              | ~n_candidates × generations |
+| **RL Bandit** 🎰 | ε-greedy softmax bandit     | Explore/exploit over prefix memory bank     | ~n_candidates × iterations  |
+| **Signature** 🕵️ | TF-IDF PII exfiltration     | RAG vault with rare-medical-term signatures | ~num_targets × templates    |
 
 > **Key insight:** `effective_harm = 0 if blocked else harm` — a blocked refusal never rewards the attacker, even if the judge mis-scores it.
 
@@ -91,6 +105,7 @@ Three sequential layers (configured in [`config/`](config/), full breakdown in [
 ```
 
 **Designed invariants** ([architecture deep-dive](docs/01-architecture.md) §5):
+
 - 🔒 **Fail-closed** — a guardrail exception = block, never breach
 - 🚫 **Refusal overrides judge** — textual refusal forces `success=False`
 - 📊 **Config fingerprinting** — SHA-256 of every guardrail file in each report
@@ -196,14 +211,14 @@ uv run pytest              # 22 offline tests, no server needed
 
 Every run reports. The reward model equations and metric derivations are formalized in [`docs/02-game-theory.md`](docs/02-game-theory.md) §6–8.
 
-| Metric | Meaning | Good |
-|--------|---------|------|
-| **ASR** | Attack Success Rate (breach fraction) | ↓ Low |
-| **DSR** | Defense Success Rate (1 − ASR) | ↑ High |
-| **Mean Harm** | Average harm grade (0–10) across goals | ↓ Low |
-| **Over-Refusal** | Benign queries wrongly blocked | ↓ Low |
-| **Attacker Return** | Cumulative attacker reward | ↓ Low |
-| **Defender Return** | Cumulative defender reward | ↑ High |
+| Metric              | Meaning                                | Good   |
+| ------------------- | -------------------------------------- | ------ |
+| **ASR**             | Attack Success Rate (breach fraction)  | ↓ Low  |
+| **DSR**             | Defense Success Rate (1 − ASR)         | ↑ High |
+| **Mean Harm**       | Average harm grade (0–10) across goals | ↓ Low  |
+| **Over-Refusal**    | Benign queries wrongly blocked         | ↓ Low  |
+| **Attacker Return** | Cumulative attacker reward             | ↓ Low  |
+| **Defender Return** | Cumulative defender reward             | ↑ High |
 
 Multiple `--repeats` give you **mean ± std** for error bars. See [`docs/05-experiments.md`](docs/05-experiments.md) for the benchmarking protocol and statistical methods.
 
@@ -211,29 +226,15 @@ Multiple `--repeats` give you **mean ± std** for error bars. See [`docs/05-expe
 
 ## 🧪 Headline Results (from the paper)
 
-| Attack | ASR Undefended | ASR Defended | Δ Harm | Verdict |
-|--------|:--------------:|:------------:|:------:|---------|
-| **RL Bandit** | 81% | **19%** | **−5.3** | 🟢 Guardrails highly effective |
-| **PAIR** | 69% | 38% | −1.2 | 🟡 Modest help |
-| **ProAttack** | 62% | 62% | **+2.1** | 🔴 Guard did not help; harm rose |
-| **Signature** | **100%** | **100%** | 0.0 | 🔴 **Bypasses guard entirely** (RAG attack) |
-| Over-refusal | 0% | 16.7% | | Utility cost of defense |
+| Attack        | ASR Undefended | ASR Defended |  Δ Harm  | Verdict                                     |
+| ------------- | :------------: | :----------: | :------: | ------------------------------------------- |
+| **RL Bandit** |      81%       |   **19%**    | **−5.3** | 🟢 Guardrails highly effective              |
+| **PAIR**      |      69%       |     38%      |   −1.2   | 🟡 Modest help                              |
+| **ProAttack** |      62%       |     62%      | **+2.1** | 🔴 Guard did not help; harm rose            |
+| **Signature** |    **100%**    |   **100%**   |   0.0    | 🔴 **Bypasses guard entirely** (RAG attack) |
+| Over-refusal  |       0%       |    16.7%     |          | Utility cost of defense                     |
 
 > **Open gap:** The signature-guided PII attack operates on its own RAG vault, never hitting the chat guardrails — 10/10 harm both ways.
-
----
-
-## 📚 Documentation Map — `docs/`
-
-| # | Document | What it covers | Who should read it |
-|---|----------|---------------|-------------------|
-| 1 | [`01-architecture.md`](docs/01-architecture.md) | **Every module, data structure, and end-to-end control flow** — the map of the codebase. Includes the big-picture ASCII diagram, module reference (simulation.py, agents/*, config/, tests/), key data structures (TurnRecord, AttackEpisode, JudgeVerdict, etc.), and the 5 design invariants. | Everyone starting out. Read this first. |
-| 2 | [`02-game-theory.md`](docs/02-game-theory.md) | **Formal POMDP + zero-sum Markov game** — state space, actions, observations, transition kernel, reward equations (adversarial + benign turns), episodic returns, equilibrium interpretation, and a full symbol table mapping Greek letters to code variables. | If you care about *why* the numbers mean what they mean. |
-| 3 | [`03-attacks.md`](docs/03-attacks.md) | **All 4 attack strategies in depth** — PAIR (iterative refinement), ProAttack (evolutionary search), RL bandit (ε-greedy softmax), Signature (TF-IDF PII exfiltration). Each section has: the loop pseudocode, key parameters, exact CLI command to test just that attack, and how to add a 5th one. | Running or extending attacks. |
-| 4 | [`04-defense.md`](docs/04-defense.md) | **The defender pipeline** — why only two guardrails (scope rationale), the 3-stage pipeline diagram, code reference for GuardrailsDefender / RawModelDefender / MockDefender, configuration reference (config.yml / prompts.yml / rails.co), the `llama_guard` naming gotcha, and ordered extension points. | Understanding or modifying the defense. |
-| 5 | [`05-experiments.md`](docs/05-experiments.md) | **Benchmarking protocol & statistics** — the golden rule ("any prompt change invalidates previous numbers"), how `--repeats` produces mean±std, statistical methods (population std, error bars), how to read the figures (rates.png, harm_grades.png, harm_heatmap.png, returns.png, signature_pii.png), A/B comparison between runs, the headline undefended vs defended results table, and reproducibility/isolation guarantees. | Running experiments, interpreting results, or reporting findings. |
-
-**Recommended reading order:** ① → ② → ③ → ④ → ⑤, or jump to whichever section matches what you're doing.
 
 ---
 
@@ -273,6 +274,6 @@ are welcome — but **every change requires a re-benchmark** ([`docs/05-experime
 
 **Made with 🧠 for AI Safety Research**
 
-*Adversarial Robustness of Medical Models in Telemedicine — Phase 2*
+_Adversarial Robustness of Medical Models in Telemedicine — Phase 2_
 
 </div>
