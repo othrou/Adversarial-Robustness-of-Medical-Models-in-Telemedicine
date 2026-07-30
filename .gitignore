@@ -11,3 +11,15 @@ __pycache__/
 attack_results/
 cache/
 *.log
+
+# Secrets -- API keys live in the environment, never in the repo.
+*keys*.txt
+.env
+.env.*
+*.pem
+.git-credentials
+
+# Raw run transcripts: they contain full adversarial prompts and model responses.
+# Judge-validation samples are curated and committed deliberately; the raw dumps
+# are not (size, and they are the actual jailbreak text).
+transcripts/

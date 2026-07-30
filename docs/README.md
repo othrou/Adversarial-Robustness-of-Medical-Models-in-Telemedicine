@@ -26,6 +26,7 @@ behind exactly two guardrails: **Llama Guard 3** + **NVIDIA NeMo Guardrails**).
 simulation.py                 # orchestrator: runs the game, scores it, writes reports
 agents/
   attacks/                    # Attacker (Agent A): pair, proattack, rl, signature
+                              #   + floor controls: direct, random_framing
   defender.py                 # Defender (Agent B): Llama Guard 3 + NeMo Guardrails
   judge.py                    # harm scorer (0-10) -> the reward signal
   reward.py                   # zero-sum reward model + scoreboard (ASR / DSR / returns)
@@ -33,9 +34,11 @@ agents/
   llm.py                      # Ollama backend + deterministic offline mock
 config/                       # NeMo rails + Llama-Guard taxonomy (O1-O8)
 analysis/plots.py             # statistical figures from run reports
+analysis/stats.py             # paired significance tests (bootstrap, McNemar, Holm)
+analysis/judge_eval.py        # judge-vs-human agreement -- the gate on every number
 scripts/benchmark.sh          # standard sweep + figures (re-run on any model/prompt change)
 results/                      # write-only run reports + figures
-tests/                        # 22 offline unit tests (mock backend, no server)
+tests/                        # 77 offline unit tests (mock backend, no server)
 notebooks/                    # original research (attack + defense); source of the ports
 ```
 

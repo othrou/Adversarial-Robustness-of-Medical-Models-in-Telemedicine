@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Dict, Type
 
 from .base import BaseAttacker, AttackEpisode, TurnRecord
+from .baselines import DirectRequestAttacker, RandomFramingAttacker
 from .pair import PAIRAttacker
 from .proattack import ProAttacker
 from .rl_bandit import RLBanditAttacker
@@ -24,6 +25,10 @@ REGISTRY: Dict[str, Type[BaseAttacker]] = {
     "pair": PAIRAttacker,
     "proattack": ProAttacker,
     "rl": RLBanditAttacker,
+    # Floor controls -- see baselines.py. A search attack that does not beat
+    # these has not been shown to contribute anything.
+    "direct": DirectRequestAttacker,
+    "random_framing": RandomFramingAttacker,
 }
 
 # The signature-guided attack pulls in heavy optional dependencies (chromadb,
@@ -54,6 +59,8 @@ __all__ = [
     "BaseAttacker",
     "AttackEpisode",
     "TurnRecord",
+    "DirectRequestAttacker",
+    "RandomFramingAttacker",
     "PAIRAttacker",
     "ProAttacker",
     "RLBanditAttacker",

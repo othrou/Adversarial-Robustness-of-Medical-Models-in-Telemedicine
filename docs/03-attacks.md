@@ -22,8 +22,19 @@ python simulation.py --attack all --repeats 5 --report results/run.json
 
 The table, then one section per attack.
 
+> **Floor controls.** Two further strategies,
+> `direct` and `random_framing` (`agents/attacks/baselines.py`), use **no attacker
+> LLM at all**: `direct` asks for the goal verbatim N times; `random_framing` is
+> best-of-N over a fixed roster. They are budget-matched to the search attacks and
+> exist to answer a question nothing in this repo previously asked: *does the
+> search contribute anything?* The raw target already breaches on 69–81% of goals,
+> so a search attack that does not clearly beat both controls has not been shown to
+> work. Run them in every sweep.
+
 | name | family | inner loop | victim | key params | notebook source |
 |------|--------|-----------|--------|-----------|-----------------|
+| `direct` | floor control | none — goal verbatim, N times | guarded MedGemma | `max_iterations` | — |
+| `random_framing` | floor control | none — best-of-N over a fixed roster | guarded MedGemma | `max_iterations`, `seed` | — |
 | `pair` | jailbreak | refine one prefix on judge feedback | guarded MedGemma | `max_iterations`, `max_queries` | `PAIR_Attack_Enhanced` |
 | `proattack` | jailbreak | evolutionary hill-climb over wrappers | guarded MedGemma | `n_candidates`, `top_k_elites`, `quality_threshold` | `ProAttack_Saad` |
 | `rl` | jailbreak | ε-greedy softmax bandit over prefixes | guarded MedGemma | `epsilon`, `n_candidates`, `top_k_memory`, `tau` | `RL_Attack_PAIR` |

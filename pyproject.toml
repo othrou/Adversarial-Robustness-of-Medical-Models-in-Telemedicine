@@ -21,6 +21,15 @@ signature = [
     "datasets>=2.19",
 ]
 
+# Cloud providers (OpenAI, OpenRouter, or any OpenAI-compatible endpoint).
+# `openai` drives the attacker/judge roles through agents/llm.py; NeMo needs
+# `langchain-openai` separately because it resolves `engine: openai` through
+# LangChain's provider registry, not through the openai SDK.
+cloud = [
+    "openai>=1.40",
+    "langchain-openai>=0.1.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

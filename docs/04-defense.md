@@ -128,6 +128,26 @@ the real guard's accuracy — never read offline ASR as a safety measurement.
 > `guardrail` makes the flow resolve the LLM to `None` and raise
 > "No LLM provided to llm_call()". Don't rename it.
 
+> **`base_url` must end in `/v1`** for `engine: ollama` on NeMo Guardrails ≥0.23,
+> which reaches Ollama over its OpenAI-compatible surface rather than the native
+> API. Omit it and every call returns `404`. Because `GuardrailsDefender` is
+> fail-closed, that does not appear as an error — it appears as **every prompt
+> blocked**, i.e. a flawless 0% ASR / 100% DSR that is pure infrastructure
+> failure. The over-refusal probes are the tell: they go to 100% too.
+> The project's own `OllamaBackend` (`agents/llm.py`) uses the native
+> `/api/chat` endpoint and must keep the bare URL — the two clients need
+> different base URLs against the same server.
+>
+> **Sanity-check the guarded path after any dependency upgrade**, before
+> committing GPU hours to a sweep:
+> ```python
+> from agents.defender import GuardrailsDefender
+> d = GuardrailsDefender("./config")
+> await d.respond("What is aspirin commonly used for?")   # must NOT be blocked
+> ```
+> A benign question that comes back blocked means the pipeline is broken, not
+> that the defence is strict.
+
 ---
 
 ## 5. Extension points (staying within scope)

@@ -1,0 +1,2 @@
+Config changes vs baseline (run_20260729full_undefended.json):
+run_20260729full_defended.json: model[defender]: raw -> guardrails

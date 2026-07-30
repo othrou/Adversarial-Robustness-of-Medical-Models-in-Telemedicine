@@ -1,10 +1,16 @@
 # This file follows the "ABC Bot" pattern from the guide
+# NOTE on base_url: NeMo Guardrails >=0.23 talks to Ollama through its
+# OpenAI-COMPATIBLE endpoint, so the URL must end in /v1. Without it every call
+# 404s -- and because the defender is fail-closed, that surfaces as every prompt
+# "blocked", i.e. a perfect-looking 0% ASR that is pure infrastructure error.
+# The project's own OllamaBackend (agents/llm.py) uses the NATIVE /api/chat
+# endpoint instead and must NOT have the /v1 suffix.
 models:
   - type: main
     engine: ollama
     model: amsaravi/medgemma-4b-it:q6
     parameters:
-      base_url: "http://127.0.0.1:11434"
+      base_url: "http://127.0.0.1:11434/v1"
 
   # NeMo injects this into the llama_guard actions as `llama_guard_llm`, keyed on
   # the model `type` (see nemoguardrails llmrails.py: model_name = f"{type}_llm").
@@ -15,7 +21,7 @@ models:
     engine: ollama
     model: llama-guard3:1b
     parameters:
-      base_url: "http://127.0.0.1:11434"
+      base_url: "http://127.0.0.1:11434/v1"
 
 # 1. Activate Input/output Rails 
 rails:

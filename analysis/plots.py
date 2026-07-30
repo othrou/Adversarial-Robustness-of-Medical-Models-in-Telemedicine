@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from typing import Dict, List, Optional
 
 import matplotlib
@@ -79,6 +80,59 @@ def _label_for(report: dict, fallback: str) -> str:
     judge = cfg.get("judge_model", "?")
     dfn = cfg.get("defender", "?")
     return f"{fallback}\n{atk}|{judge}|{dfn}"
+
+
+#: Budget knobs that must match for two runs to be comparable. Two runs over a
+#: different number of goals are not the same experiment, however identical their
+#: models are.
+BUDGET_KEYS = ("num_goals", "max_iterations", "max_queries", "breach_threshold")
+
+
+def diff_budgets(a: dict, b: dict) -> List[str]:
+    """Budget//scope differences between two run configs."""
+    ca, cb = a.get("config", {}), b.get("config", {})
+    return [
+        f"budget[{key}]: {ca.get(key)} -> {cb.get(key)}"
+        for key in BUDGET_KEYS
+        if ca.get(key) != cb.get(key)
+    ]
+
+
+def missing_attacks(baseline: dict, other: dict) -> List[str]:
+    """Attacks present in the baseline but absent from ``other``.
+
+    An absent attack is not a zero -- it is a hole. Without this, a missing
+    ``signature`` block renders as "PII leaks fell from 100% to 0%", a result the
+    attack is structurally incapable of producing.
+    """
+    return sorted(set(baseline.get("results", {})) - set(other.get("results", {})))
+
+
+def confound_report(reports: List[dict], paths: List[str]) -> List[str]:
+    """Every way run *k* differs from the baseline, as one flat list of lines."""
+    lines: List[str] = []
+    for report, path in zip(reports[1:], paths[1:]):
+        tag = os.path.basename(path)
+        diffs = diff_configs(reports[0], report) + diff_budgets(reports[0], report)
+        gone = missing_attacks(reports[0], report)
+        if gone:
+            diffs.append(f"MISSING attacks (not measured, NOT zero): {', '.join(gone)}")
+        if diffs:
+            lines.extend(f"{tag}: {d}" for d in diffs)
+        else:
+            lines.append(
+                f"{tag}: NO model/prompt change vs baseline "
+                "(identical config -- comparison measures only run-to-run noise)"
+            )
+    return lines
+
+
+def _confound_dimensions(a: dict, b: dict) -> List[str]:
+    """Independent variables that differ between two runs.
+
+    More than one means the comparison cannot attribute an effect to anything.
+    """
+    return diff_configs(a, b) + diff_budgets(a, b)
 
 
 def diff_configs(a: dict, b: dict) -> List[str]:
@@ -249,27 +303,46 @@ def plot_benchmark(reports: List[dict], labels: List[str], metric: str, out: str
     n = len(reports)
     width = 0.8 / max(n, 1)
 
+    # Fix the ceiling up front: a "not measured" placeholder is drawn at full
+    # height, so it must be known before any bar is placed.
+    if metric in RATE_METRICS:
+        top = 1.05
+    elif metric == "mean_harm_score":
+        top = 10.5
+    else:
+        vals = [r["results"].get(a, {}).get(metric, 0.0) for r in reports for a in attacks]
+        top = max([*vals, 0.0]) * 1.15 or 1.0
+
     fig, ax = plt.subplots(figsize=(max(7, 1.7 * len(attacks) + 2), 4.8))
     for k, (report, label) in enumerate(zip(reports, labels)):
         res = report["results"]
-        means = [res.get(a, {}).get(metric, 0.0) for a in attacks]
-        errs = [_std_of(res.get(a, {}), metric) for a in attacks]
         offs = [i + (k - (n - 1) / 2) * width for i in x]
-        ax.bar(offs, means, width, yerr=errs, capsize=3,
-               label=label, color=PALETTE[k % len(PALETTE)])
+        # An attack a run never measured must NOT become a zero bar -- that
+        # reads as "the metric fell to zero" for something never run.
+        present = [i for i, a in enumerate(attacks) if metric in res.get(a, {})]
+        absent = [i for i in range(len(attacks)) if i not in present]
+        ax.bar([offs[i] for i in present],
+               [res[attacks[i]][metric] for i in present],
+               width,
+               yerr=[_std_of(res[attacks[i]], metric) for i in present],
+               capsize=3, label=label, color=PALETTE[k % len(PALETTE)])
+        # A hatched, unfilled full-height slot reads as a hole in the data --
+        # visually the opposite of a bar at zero.
+        for i in absent:
+            ax.bar([offs[i]], [top], width, facecolor="none", edgecolor="0.65",
+                   hatch="///", linewidth=0.8, zorder=0)
+            ax.text(offs[i], top * 0.5, "not measured", rotation=90, ha="center",
+                    va="center", fontsize=7, color="0.3", fontweight="bold")
 
     ax.set_xticks(list(x))
     ax.set_xticklabels(attacks)
-    if metric in RATE_METRICS:
-        ax.set_ylim(0, 1.05)
-    elif metric == "mean_harm_score":
-        ax.set_ylim(0, 10.5)
+    ax.set_ylim(0, top)
     ax.axhline(0, color="black", linewidth=0.6)
     ax.set_ylabel(metric.replace("_", " "))
     title = f"Benchmark comparison -- {RATE_LABELS.get(metric, metric)}"
     if subtitle:
-        title += f"\nchanged: {subtitle}"
-    ax.set_title(title, fontsize=10)
+        title += "\nchanged: " + _wrap(subtitle)
+    ax.set_title(title, fontsize=9)
     ax.legend(frameon=False, fontsize=8)
     ax.grid(axis="y", alpha=0.3)
     return _save(fig, out)
@@ -278,6 +351,17 @@ def plot_benchmark(reports: List[dict], labels: List[str], metric: str, out: str
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+def _wrap(text: str, width: int = 95, max_lines: int = 3) -> str:
+    """Wrap a long "what changed" subtitle so it stays inside the figure."""
+    import textwrap
+
+    lines = textwrap.wrap(text, width=width)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] += f"  (+{len(textwrap.wrap(text, width=width)) - max_lines} more, see changes.txt)"
+    return "\n".join(lines)
+
+
 def _title(base: str, report: dict) -> str:
     cfg = report.get("config", {})
     reps = cfg.get("repeats", 1)
@@ -295,7 +379,8 @@ def _save(fig, out: str) -> str:
     return out
 
 
-def generate_all(paths: List[str], outdir: str, labels: Optional[List[str]] = None) -> List[str]:
+def generate_all(paths: List[str], outdir: str, labels: Optional[List[str]] = None,
+                 allow_confounded: bool = False) -> List[str]:
     """Produce every applicable figure for the given report(s)."""
     reports = [load_report(p) for p in paths]
     written: List[str] = []
@@ -312,28 +397,46 @@ def generate_all(paths: List[str], outdir: str, labels: Optional[List[str]] = No
         if pii:
             written.append(pii)
     else:
-        labels = labels or [
-            _label_for(r, os.path.splitext(os.path.basename(p))[0])
-            for r, p in zip(reports, paths)
-        ]
         # Detect and report what changed between the first run (baseline) and each
         # later run, so a model/prompt change is explicit, not implicit.
-        change_lines: List[str] = []
-        for r, p in zip(reports[1:], paths[1:]):
-            diffs = diff_configs(reports[0], r)
-            tag = os.path.basename(p)
-            if diffs:
-                change_lines.append(f"{tag}: " + "; ".join(diffs))
-            else:
-                change_lines.append(
-                    f"{tag}: NO model/prompt change vs baseline "
-                    "(identical config -- comparison measures only run-to-run noise)"
-                )
+        change_lines = confound_report(reports, paths)
         print("[plots] config changes vs baseline:")
         for line in change_lines:
             print(f"  - {line}")
 
-        subtitle = "; ".join(diff_configs(reports[0], reports[1])) if len(reports) == 2 else ""
+        # A caller-supplied label can otherwise overwrite the recorded config --
+        # e.g. labelling a run that changed attacker, judge AND defender as
+        # "Guarded-MedGemma", which reads as a clean guardrail ablation.
+        labels = [
+            _label_for(r, lab)
+            for r, lab in zip(
+                reports,
+                labels or [os.path.splitext(os.path.basename(p))[0] for p in paths],
+            )
+        ]
+
+        confounded = {
+            os.path.basename(p): dims
+            for r, p in zip(reports[1:], paths[1:])
+            if len(dims := _confound_dimensions(reports[0], r)) > 1
+        }
+        if confounded and not allow_confounded:
+            sys.stdout.flush()   # keep the change list above the refusal
+            detail = "\n".join(
+                f"  {tag}: {len(dims)} variables changed at once\n"
+                + "\n".join(f"    - {d}" for d in dims)
+                for tag, dims in confounded.items()
+            )
+            raise SystemExit(
+                "[plots] REFUSING to draw a confounded comparison.\n"
+                f"{detail}\n"
+                "  With more than one variable changed, no difference in these\n"
+                "  figures can be attributed to any of them. Re-run holding all\n"
+                "  but one fixed, or pass --allow-confounded if you understand\n"
+                "  the figure is descriptive only."
+            )
+
+        subtitle = "; ".join(_confound_dimensions(reports[0], reports[1])) if len(reports) == 2 else ""
         for metric in RATE_METRICS + ["mean_harm_score"]:
             written.append(
                 plot_benchmark(reports, labels, metric,
@@ -355,13 +458,20 @@ def parse_args():
     p.add_argument("reports", nargs="+", help="one or more results/*.json reports")
     p.add_argument("--outdir", default="results/figures", help="where to write PNGs")
     p.add_argument("--labels", nargs="*", default=None,
-                   help="series labels for benchmark comparison (>=2 reports)")
+                   help="series labels for benchmark comparison (>=2 reports). "
+                        "Always annotated with the recorded config -- a label "
+                        "cannot override what the run actually was.")
+    p.add_argument("--allow-confounded", action="store_true",
+                   help="draw a comparison even when more than one variable "
+                        "changed between runs. The figure is then descriptive "
+                        "only: no effect can be attributed to any one change.")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    written = generate_all(args.reports, args.outdir, args.labels)
+    written = generate_all(args.reports, args.outdir, args.labels,
+                           allow_confounded=args.allow_confounded)
     print(f"[plots] wrote {len(written)} figure(s):")
     for w in written:
         print(f"  - {w}")

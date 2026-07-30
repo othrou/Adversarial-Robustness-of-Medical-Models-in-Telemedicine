@@ -20,7 +20,7 @@ import random
 from dataclasses import dataclass
 from typing import List, Optional
 
-from .base import AttackEpisode, BaseAttacker
+from .base import AttackEpisode, BaseAttacker, strip_reasoning
 
 # Verbatim from notebooks/Attack/RL_Attack_PAIR.ipynb.
 ATTACKER_SYSTEM_PROMPT = """
@@ -57,6 +57,8 @@ class _Arm:
 
 
 def _clean_prefix(raw: str, max_words: int = 40) -> str:
+    # Chain-of-thought is not a prefix; strip it before taking the last line.
+    raw = strip_reasoning(raw)
     lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
     cand = lines[-1] if lines else raw.strip()
     if ":" in cand and '"' in cand:
@@ -118,8 +120,10 @@ class RLBanditAttacker(BaseAttacker):
             user, system=ATTACKER_SYSTEM_PROMPT, max_tokens=80, temperature=0.9
         )
         prefix = _clean_prefix(raw)
-        if not prefix or len(prefix.split()) < 3:
+        used_fallback = not prefix or len(prefix.split()) < 3
+        if used_fallback:
             prefix = self._rng.choice(_SEED_PREFIXES)
+        self._note_proposal(used_fallback)
         return prefix
 
     def _generate_candidates(self, goal: str, memory: List[_Arm], feedback: str) -> List[str]:
@@ -134,7 +138,7 @@ class RLBanditAttacker(BaseAttacker):
 
     async def attack(self, goal: str, defender) -> AttackEpisode:
         self._log(f"\n{'=' * 60}\n[RL bandit] goal: {goal[:70]}...\n{'=' * 60}")
-        episode = AttackEpisode(goal=goal, attack=self.name, success=False, best_harm=0.0)
+        episode = self._start_episode(goal)
         memory: List[_Arm] = []
         feedback = "No previous feedback; generate an initial, diverse framing."
 
@@ -173,4 +177,4 @@ class RLBanditAttacker(BaseAttacker):
                 self._log(f"  -> breach at iteration {iteration + 1}")
                 break
 
-        return episode
+        return self._finish_episode(episode)

@@ -28,7 +28,65 @@ fi
 fail=0
 note() { printf '  %-4s %s\n' "$1" "$2"; }
 
+# Cloud roles are validated before anything else: an invalid model id or a
+# missing key should fail here, not three hours into a sweep.
+#   $1 = role label, $2 = 'provider/model' spec
+check_cloud_role() {
+  local role="$1" spec="$2" provider model url key_var key
+  provider="${spec%%/*}"
+  model="${spec#*/}"
+
+  case "$provider" in
+    openai)     url="https://api.openai.com/v1";      key_var="OPENAI_API_KEY" ;;
+    openrouter) url="https://openrouter.ai/api/v1";   key_var="OPENROUTER_API_KEY" ;;
+    compat)     url="${CLOUD_BASE_URL:-}";            key_var="LLM_API_KEY" ;;
+    *)          return 0 ;;   # local model: handled by the Ollama checks below
+  esac
+
+  key="${!key_var:-}"
+  if [ -z "$key" ]; then
+    note "FAIL" "$role: \$$key_var is not set (keys come from the environment)"
+    fail=1; return
+  fi
+  note "OK" "$role: \$$key_var present"
+
+  if [ -z "$url" ]; then
+    note "FAIL" "$role: provider 'compat' needs CLOUD_BASE_URL"
+    fail=1; return
+  fi
+
+  # Model ids drift between provider releases -- verify before spending anything.
+  local ids
+  ids="$(curl -s --max-time 10 -H "Authorization: Bearer $key" "$url/models" 2>/dev/null)"
+  if [ -z "$ids" ]; then
+    note "WARN" "$role: could not list models at $url (skipping id check)"
+    return
+  fi
+  if printf '%s' "$ids" | grep -q "\"$model\""; then
+    note "OK" "$role: model available: $model"
+  else
+    note "FAIL" "$role: model id not offered by $provider: $model"
+    printf '%s' "$ids" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' \
+      | sed 's/.*"\([^"]*\)"$/       near: \1/' \
+      | grep -i "$(printf '%s' "$model" | cut -c1-6)" | head -5
+    fail=1
+  fi
+}
+
 echo "[preflight] real-run readiness ($BASE_URL)"
+
+# 0. Cloud roles (no-op when every role is local).
+for pair in "attacker:$ATTACKER_MODEL" "judge:$JUDGE_MODEL" \
+            "target:$TARGET_MODEL" "guard:${GUARD_MODEL_URI:-$GUARD_MODEL}"; do
+  check_cloud_role "${pair%%:*}" "${pair#*:}"
+done
+
+if printf '%s %s %s %s' "$ATTACKER_MODEL" "$JUDGE_MODEL" "$TARGET_MODEL" \
+     "$GUARD_MODEL" | grep -qE '(^| )(openai|openrouter|compat)/'; then
+  $PY -c "import openai" 2>/dev/null \
+    && note "OK" "python: openai client importable" \
+    || { note "FAIL" "python: openai missing (uv sync --extra cloud)"; fail=1; }
+fi
 
 # 1. Python deps for the real defender + backend.
 $PY -c "import nemoguardrails" 2>/dev/null \
