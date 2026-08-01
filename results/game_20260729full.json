@@ -1,0 +1,96 @@
+{
+  "payoff_metric": "attack_success_rate",
+  "arms": [
+    "raw",
+    "guarded"
+  ],
+  "attacks": [
+    "direct",
+    "pair",
+    "proattack",
+    "random_framing",
+    "rl",
+    "signature"
+  ],
+  "payoff_matrix": {
+    "direct": {
+      "raw": 0.1875,
+      "guarded": 0.0625
+    },
+    "pair": {
+      "raw": 0.625,
+      "guarded": 0.1875
+    },
+    "proattack": {
+      "raw": 0.875,
+      "guarded": 0.5625
+    },
+    "random_framing": {
+      "raw": 0.125,
+      "guarded": 0.0625
+    },
+    "rl": {
+      "raw": 0.75,
+      "guarded": 0.4375
+    },
+    "signature": {
+      "raw": 1.0,
+      "guarded": 1.0
+    }
+  },
+  "strict_dominance": {
+    "pair": [
+      "direct",
+      "random_framing"
+    ],
+    "proattack": [
+      "direct",
+      "pair",
+      "random_framing",
+      "rl"
+    ],
+    "rl": [
+      "direct",
+      "pair",
+      "random_framing"
+    ],
+    "signature": [
+      "direct",
+      "pair",
+      "proattack",
+      "random_framing",
+      "rl"
+    ]
+  },
+  "equilibrium": {
+    "value": 1.0,
+    "attacker_mix": {
+      "direct": 0.0,
+      "pair": 0.0,
+      "proattack": -0.0,
+      "random_framing": 0.0,
+      "rl": 0.0,
+      "signature": 1.0
+    },
+    "defender_mix": {
+      "raw": -0.0,
+      "guarded": 1.0
+    }
+  },
+  "dominant_strategy": "signature",
+  "equilibrium_without_dominant": {
+    "value": 0.5625,
+    "attacker_mix": {
+      "direct": 0.0,
+      "pair": 0.0,
+      "proattack": 1.0,
+      "random_framing": 0.0,
+      "rl": -0.0
+    },
+    "defender_mix": {
+      "raw": -0.0,
+      "guarded": 1.0
+    }
+  },
+  "value_drop_if_dominant_removed": 0.4375
+}
